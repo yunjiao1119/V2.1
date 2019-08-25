@@ -5,10 +5,6 @@ output:
   pdf_document: default
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ```{r echo=FALSE, include=FALSE}
 library(mvtnorm)
 library(tableone)
@@ -27,14 +23,14 @@ library(abind)
 library(cvTools)
 library(modEvA)
 require(knitr)
-
+knitr::opts_chunk$set(echo = TRUE)
 
 ```
 
 ```{r}
 rm(list = ls())
 nda18 <-
-  readRDS("E:/ABCD study/data/ABCD_V2.1/ABCD data/ABCD_V21_baseline_year_1_arm_1.Rds")
+  readRDS("E:/ABCD study/R/Outputs/nda18_b1_voi.Rds")
 
 ```
 
@@ -42,141 +38,7 @@ nda18 <-
 
 ```{r}
 
-# fix income
-nda18$household.income = nda18$demo_comb_income_v2b
-levels(nda18$household.income) <-
-  list(
-    "<50K" = c(
-      "Less than $5,000",
-      "$5,000 through $11,999",
-      "$12,000 through $15,999",
-      "$16,000 through $24,999",
-      "$25,000 through $34,999",
-      "$35,000 through $49,999"
-    ),
-    ">=50K & <100K" = c("$50,000 through $74,999",
-                        "$75,000 through $99,999"),
-    ">=100k & <200k" = "$100,000 through $199,999",
-    ">=200k" = "$200,000 and greater"
-  )
-
-
-# fix eduction
-
-high.educ.prnt = nda18$demo_prnt_ed_v2b
-# levels(nda18$demo_prnt_ed_v2b)
-levels(high.educ.prnt) <-
-  list(
-    '1' = c(
-      "1st grade",
-      "2nd grade",
-      "3rd grade",
-      "4th grade",
-      "5th grade",
-      "6th grade",
-      "7th grade",
-      "8th grade",
-      "9th grade",
-      "10th grade",
-      "11th grade",
-      "12th grade, no diploma"
-    ),
-    
-    '2' = c("High school graduate", "GED or equivalent"),
-    
-    '3' = c(
-      "Some college, no degree",
-      "Associate degree: Occupational, Technical, or Vocational",
-      "Associate degree: Academic Program"
-    ),
-    
-    '4' = c("Bachelor's degree (ex. BA, AB, BS, BBS)"),
-    
-    '5' = c(
-      "Master's degree (ex. MA, MS, MEng, MEd, MBA)",
-      "Professional School degree (ex. MD, DDS, DVN, JD)",
-      "Doctoral degree (ex. PhD, EdD)"
-    )
-    
-    ,"777" = "Refused to answer"
-    
-  )
-
-
-
-
-
-high.educ.prtnr = nda18$demo_prtnr_ed_v2b
-
-levels(high.educ.prtnr) <-
-  list(
-    '1' = c(
-      "Never attended/Kindergarten only",
-      "1st grade",
-      "2nd grade",
-      "3rd grade",
-      "4th grade",
-      "5th grade",
-      "6th grade",
-      "7th grade",
-      "8th grade",
-      "9th grade",
-      "10th grade",
-      "11th grade",
-      "12th grade, no diploma"
-    ),
-    
-    '2' = c("High school graduate", "GED or equivalent"),
-    
-    '3' = c(
-      "Some college, no degree",
-      "Associate degree: Occupational, Technical, or Vocational",
-      "Associate degree: Academic Program"
-    ),
-    
-    '4' = c("Bachelor's degree (ex. BA, AB, BS, BBS)"),
-    
-    '5' = c(
-      "Master's degree (ex. MA, MS, MEng, MEd, MBA)",
-      "Professional School degree (ex. MD, DDS, DVN, JD)",
-      "Doctoral degree (ex. PhD, EdD)"
-    )
-    ,"777" = "Refused to answer",
-    "999" = "Don't Know"
-  )
-
-
-
-high.educ.prtnr[which(high.educ.prtnr == "999")] = NA
-high.educ.prnt[which(high.educ.prnt == "777")] = NA
-high.educ.prtnr[which(high.educ.prtnr == "777")] = NA
-
-high.educ = pmax(as.numeric(as.character(high.educ.prnt)), as.numeric(as.character(high.educ.prtnr)), na.rm=T)
-high.educ = factor( high.educ, levels= 1:5, labels = c("< HS Diploma","HS Diploma/GED","Some College","Bachelor","Post Graduate Degree") )
-
-nda18$high.educ = high.educ
-
-
-
-
-# fix married
-# levels(nda18$demo_prnt_marital_v2b)
-nda18$married <- nda18$demo_prnt_marital_v2b
-
-levels(nda18$married) <- list(
-  "Not Married" = c(
-    "Widowed",
-    "Divorced",
-    "Separated",
-    "Never married",
-    "Living with partner"
-  ),
-  
-  "Married" = "Married"
-)
-table(nda18$married)
-
-# fix premature
+# premature
 nda18$premature <- nda18$devhx_12a_born_premature_p
 levels(nda18$premature) <- list("Yes" = "Yes",
                                 "No" = "No")
@@ -190,18 +52,27 @@ table(nda18$premature)
 
 ```{r}
 ## Select demographics
+
+
 ind_demog = c(
   which(names(nda18) == "age"),
   which(names(nda18) == "female"),
-  which(names(nda18) == "race_ethnicity"),
+  which(names(nda18) == "race.ethnicity.5level"),
+  which(names(nda18) == "race.eth.8level"),
+  which(names(nda18) == "race.ethnicity.5level.imputed"),
+  which(names(nda18) == "race.eth.8level.imputed"),
   which(names(nda18) == "high.educ"),
+  which(names(nda18) == "high.educ.imputed"),
+  which(names(nda18) == "household.income.3level"),
+  which(names(nda18) == "household.income.4level"),
+  which(names(nda18) == "household.income.3level.imputed"),
+  which(names(nda18) == "household.income.4level.imputed"),
   which(names(nda18) == "married"),
-  which(names(nda18) == "household.income")
-)
-
-
+  which(names(nda18) == "married.imputed"))
+  
 names(nda18)[ind_demog]
 summary(nda18[, ind_demog])
+
 ```
 
 ```{r}
@@ -294,7 +165,7 @@ names(nda18)[which(names(nda18) == "female")] = "Female"
 names(nda18)[which(names(nda18) == "race_ethnicity")] = "Race Ethnicity"
 names(nda18)[which(names(nda18) == "high.educ")] = "Highest Parental Education"
 names(nda18)[which(names(nda18) == "married")] = "Household Marital Status"
-names(nda18)[which(names(nda18) == "household.income")] = "Household Income"
+names(nda18)[which(names(nda18) == "household.income.4level")] = "Household Income"
 names(nda18)[which(names(nda18) == "abcd_site")] = "Site"
 names(nda18)[which(names(nda18) == "rel_relationship")] = "Relationship"
 names(nda18)[which(names(nda18) == "premature")] = "Premature"
@@ -319,11 +190,8 @@ nda18$compl = "Incomplete"
 nda18$compl[complete.cases(nda18[, c(ind_nest, ind_np)])] = "Complete"
 names(nda18)[c(ind_nest, ind_np)]
 table(nda18$compl)
-n<- c(ind_nest, ind_np)[-c(1,2)]
 
-nda18$compl1 = "Incomplete"
-nda18$compl1[complete.cases(nda18[, n])] = "Complete"
-table(nda18$compl1)
+
 
 ```
 
@@ -431,8 +299,8 @@ data = nda18[, c(
 )]
 names(data)
 dim(data)
-data$subjectid = as.character(data$subjectid)
-names(data)[names(data) == "subjectid"] = "pid"
+data$src_subject_id = as.character(data$src_subject_id)
+names(data)[names(data) == "src_subject_id"] = "pid"
 data$site_num = as.numeric(substr(data$Site, 5, 6))
 data$fam_num = 0
 ind = 0
@@ -444,8 +312,9 @@ for (i in sort(unique(data$rel_family_id))) {
 data = data[order(data$site_num, data$fam_num, data$rel_group_id), ]
 
 ```
+
 ```{r}
-ind_Y = c(11:22)
+ind_Y = c(19:30)
 names(data)[ind_Y]
 ```
 

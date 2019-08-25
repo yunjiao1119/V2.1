@@ -38,4 +38,5 @@ voi <- c(voi_daniel, demographics)
 nda18_b1_voi <-
   nda18_b1[, which(names(nda18_b1) %in% voi)]
 
+saveRDS(nda18_b1_voi,"E:/ABCD study/R/Outputs/nda18_b1_voi.Rds")
 write.csv(nda18_b1_voi, "E:/ABCD study/R/Outputs/nda18_b1_voi.csv")
