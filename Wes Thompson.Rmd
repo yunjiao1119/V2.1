@@ -1,0 +1,492 @@
+---
+title: "Aug 25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+library(mvtnorm)
+library(tableone)
+library(parallel)
+library(rstan)
+library(loo)
+library(gamm4)
+library(Hmisc)
+library(FactoMineR)
+library(nFactors)
+library(reshape2)
+library(psych)
+library(data.table)
+library(mice)
+library(abind)
+library(cvTools)
+library(modEvA)
+require(knitr)
+
+
+```
+
+```{r}
+rm(list = ls())
+nda18 <-
+  readRDS("E:/ABCD study/data/ABCD_V2.1/ABCD data/ABCD_V21_baseline_year_1_arm_1.Rds")
+
+```
+
+
+
+```{r}
+
+# fix income
+nda18$household.income = nda18$demo_comb_income_v2b
+levels(nda18$household.income) <-
+  list(
+    "<50K" = c(
+      "Less than $5,000",
+      "$5,000 through $11,999",
+      "$12,000 through $15,999",
+      "$16,000 through $24,999",
+      "$25,000 through $34,999",
+      "$35,000 through $49,999"
+    ),
+    ">=50K & <100K" = c("$50,000 through $74,999",
+                        "$75,000 through $99,999"),
+    ">=100k & <200k" = "$100,000 through $199,999",
+    ">=200k" = "$200,000 and greater"
+  )
+
+
+# fix eduction
+
+high.educ.prnt = nda18$demo_prnt_ed_v2b
+# levels(nda18$demo_prnt_ed_v2b)
+levels(high.educ.prnt) <-
+  list(
+    '1' = c(
+      "1st grade",
+      "2nd grade",
+      "3rd grade",
+      "4th grade",
+      "5th grade",
+      "6th grade",
+      "7th grade",
+      "8th grade",
+      "9th grade",
+      "10th grade",
+      "11th grade",
+      "12th grade, no diploma"
+    ),
+    
+    '2' = c("High school graduate", "GED or equivalent"),
+    
+    '3' = c(
+      "Some college, no degree",
+      "Associate degree: Occupational, Technical, or Vocational",
+      "Associate degree: Academic Program"
+    ),
+    
+    '4' = c("Bachelor's degree (ex. BA, AB, BS, BBS)"),
+    
+    '5' = c(
+      "Master's degree (ex. MA, MS, MEng, MEd, MBA)",
+      "Professional School degree (ex. MD, DDS, DVN, JD)",
+      "Doctoral degree (ex. PhD, EdD)"
+    )
+    
+    ,"777" = "Refused to answer"
+    
+  )
+
+
+
+
+
+high.educ.prtnr = nda18$demo_prtnr_ed_v2b
+
+levels(high.educ.prtnr) <-
+  list(
+    '1' = c(
+      "Never attended/Kindergarten only",
+      "1st grade",
+      "2nd grade",
+      "3rd grade",
+      "4th grade",
+      "5th grade",
+      "6th grade",
+      "7th grade",
+      "8th grade",
+      "9th grade",
+      "10th grade",
+      "11th grade",
+      "12th grade, no diploma"
+    ),
+    
+    '2' = c("High school graduate", "GED or equivalent"),
+    
+    '3' = c(
+      "Some college, no degree",
+      "Associate degree: Occupational, Technical, or Vocational",
+      "Associate degree: Academic Program"
+    ),
+    
+    '4' = c("Bachelor's degree (ex. BA, AB, BS, BBS)"),
+    
+    '5' = c(
+      "Master's degree (ex. MA, MS, MEng, MEd, MBA)",
+      "Professional School degree (ex. MD, DDS, DVN, JD)",
+      "Doctoral degree (ex. PhD, EdD)"
+    )
+    ,"777" = "Refused to answer",
+    "999" = "Don't Know"
+  )
+
+
+
+high.educ.prtnr[which(high.educ.prtnr == "999")] = NA
+high.educ.prnt[which(high.educ.prnt == "777")] = NA
+high.educ.prtnr[which(high.educ.prtnr == "777")] = NA
+
+high.educ = pmax(as.numeric(as.character(high.educ.prnt)), as.numeric(as.character(high.educ.prtnr)), na.rm=T)
+high.educ = factor( high.educ, levels= 1:5, labels = c("< HS Diploma","HS Diploma/GED","Some College","Bachelor","Post Graduate Degree") )
+
+nda18$high.educ = high.educ
+
+
+
+
+# fix married
+# levels(nda18$demo_prnt_marital_v2b)
+nda18$married <- nda18$demo_prnt_marital_v2b
+
+levels(nda18$married) <- list(
+  "Not Married" = c(
+    "Widowed",
+    "Divorced",
+    "Separated",
+    "Never married",
+    "Living with partner"
+  ),
+  
+  "Married" = "Married"
+)
+table(nda18$married)
+
+# fix premature
+nda18$premature <- nda18$devhx_12a_born_premature_p
+levels(nda18$premature) <- list("Yes" = "Yes",
+                                "No" = "No")
+
+table(nda18$premature)
+
+
+```
+
+
+
+```{r}
+## Select demographics
+ind_demog = c(
+  which(names(nda18) == "age"),
+  which(names(nda18) == "female"),
+  which(names(nda18) == "race_ethnicity"),
+  which(names(nda18) == "high.educ"),
+  which(names(nda18) == "married"),
+  which(names(nda18) == "household.income")
+)
+
+
+names(nda18)[ind_demog]
+summary(nda18[, ind_demog])
+```
+
+```{r}
+## Select nesting variables
+
+ind_nest = c(which(names(nda18) == "abcd_site"), which(names(nda18) == "rel_family_id"))
+
+summary(nda18[, ind_nest])
+nda18$abcd_site = as.character(nda18$abcd_site)
+nda18$abcd_site[nda18$abcd_site == "site22"] = "site07"
+nda18$abcd_site = factor(nda18$abcd_site)
+```
+
+
+```{r}
+## Select neuropsychological measures
+ind_pea_ravlt = c(
+  which(names(nda18) == "pea_ravlt_sd_trial_i_tc"),
+  which(names(nda18) == "pea_ravlt_sd_trial_ii_tc"),
+  which(names(nda18) == "pea_ravlt_sd_trial_iii_tc")
+  ,
+  which(names(nda18) == "pea_ravlt_sd_trial_iv_tc"),
+  which(names(nda18) == "pea_ravlt_sd_trial_v_tc")
+)
+
+# ind_pea_ravlt = c(which(names(nda18)=="pea_ravlt_sd_trial_i_tc"),which(names(nda18)=="pea_ravlt_sd_trial_ii_tc"),
+# 	which(names(nda18)=="pea_ravlt_sd_trial_iii_tc"),which(names(nda18)=="pea_ravlt_sd_trial_iv_tc"),
+# 	which(names(nda18)=="pea_ravlt_sd_trial_v_tc")
+# 	,which(names(nda18)=="pea_ravlt_sd_trial_vi_tc"),which(names(nda18)=="pea_ravlt_ld_trial_vii_tc")
+# 	)
+
+names(nda18)[ind_pea_ravlt]
+```
+```{r}
+summary(nda18[,ind_pea_ravlt])
+
+```
+
+
+```{r}
+nda18$pea_ravlt_ld = apply(nda18[, ind_pea_ravlt], 1, sum)
+
+par(mfrow = c(1, 2))
+hist(nda18$pea_ravlt_ld)
+hist(nda18$lmt_scr_perc_correct)
+```
+```{r}
+ind_np = c(which(names(nda18)=="nihtbx_picvocab_uncorrected"),
+           which(names(nda18)=="nihtbx_flanker_uncorrected"),
+           which(names(nda18)=="nihtbx_list_uncorrected"),
+           which(names(nda18)=="nihtbx_cardsort_uncorrected"),
+           which(names(nda18)=="nihtbx_pattern_uncorrected"),
+           which(names(nda18)=="nihtbx_picture_uncorrected"),
+           which(names(nda18)=="nihtbx_reading_uncorrected"),
+           which(names(nda18)=="pea_ravlt_ld"),
+           which(names(nda18)=="lmt_scr_perc_correct")
+           ,which(names(nda18)=="pea_ravlt_sd_trial_vi_tc"),
+           which(names(nda18)=="pea_ravlt_ld_trial_vii_tc"),
+           which(names(nda18)=="pea_wiscv_tss")
+)
+
+
+names(nda18)[ind_np]
+
+
+```
+
+```{r}
+## Select dependent measures 
+ind_dv = c(
+  which(names(nda18) == "cbcl_scr_syn_external_r"),
+  which(names(nda18) == "cbcl_scr_syn_internal_r"),
+  which(names(nda18) == "cbcl_scr_07_stress_r")
+)
+
+names(nda18)[ind_dv]
+```
+
+```{r}
+
+######################
+######################
+## Rename variables ##
+######################
+######################
+
+names(nda18)[which(names(nda18) == "age")] = "Age"
+nda18$Age = nda18$Age / 12
+names(nda18)[which(names(nda18) == "female")] = "Female"
+names(nda18)[which(names(nda18) == "race_ethnicity")] = "Race Ethnicity"
+names(nda18)[which(names(nda18) == "high.educ")] = "Highest Parental Education"
+names(nda18)[which(names(nda18) == "married")] = "Household Marital Status"
+names(nda18)[which(names(nda18) == "household.income")] = "Household Income"
+names(nda18)[which(names(nda18) == "abcd_site")] = "Site"
+names(nda18)[which(names(nda18) == "rel_relationship")] = "Relationship"
+names(nda18)[which(names(nda18) == "premature")] = "Premature"
+names(nda18)[which(names(nda18) == "devhx_3_age_at_birth_mother_p")] = "Age of Mother"
+
+
+# names(nda18)[which(names(nda18)=="nihtbx_picvocab_uncorrected")] = "PicVocab"
+# names(nda18)[which(names(nda18)=="nihtbx_flanker_uncorrected")] = "Flanker"
+# names(nda18)[which(names(nda18)=="nihtbx_list_uncorrected")] = "List"
+# names(nda18)[which(names(nda18)=="nihtbx_cardsort_uncorrected")] = "CardSort"
+# names(nda18)[which(names(nda18)=="nihtbx_pattern_uncorrected")] = "Pattern"
+# names(nda18)[which(names(nda18)=="nihtbx_picture_uncorrected")] = "Picture"
+# names(nda18)[which(names(nda18)=="nihtbx_reading_uncorrected")] = "Reading"
+# names(nda18)[which(names(nda18)=="pea_ravlt_ld")] = "RAVLT"
+# names(nda18)[which(names(nda18)=="lmt_scr_perc_correct")] = "LMT"
+# names(nda18)[which(names(nda18)=="pea_wiscv_tss")] = "WISC-V"
+# names(nda18)[which(names(nda18)=="cbcl_scr_syn_external_r")] = "Externalizing"
+# names(nda18)[which(names(nda18)=="cbcl_scr_syn_internal_r")] = "Internalizing"
+# names(nda18)[which(names(nda18)=="cbcl_scr_07_stress_r")] = "Stress"
+
+nda18$compl = "Incomplete"
+nda18$compl[complete.cases(nda18[, c(ind_nest, ind_np)])] = "Complete"
+names(nda18)[c(ind_nest, ind_np)]
+table(nda18$compl)
+n<- c(ind_nest, ind_np)[-c(1,2)]
+
+nda18$compl1 = "Incomplete"
+nda18$compl1[complete.cases(nda18[, n])] = "Complete"
+table(nda18$compl1)
+
+```
+
+```{r}
+## Create Table 1
+vars1 <-
+  c(
+    "Age",
+    "Female",
+    "Race Ethnicity",
+    "Highest Parental Education",
+    "Household Marital Status",
+    "Household Income",
+    "Relationship",
+    "Site",
+    "Premature",
+    "Age of Mother"
+  )
+tab1 <- CreateTableOne(vars = vars1,
+                       data = nda18,
+                       strata = "compl")
+tabAsStringMatrix <-
+  print(tab1, printToggle = FALSE, noSpaces = TRUE)
+tab1 = knitr::kable(tabAsStringMatrix)
+kable(tabAsStringMatrix)
+
+```
+
+
+```{r}
+## Create Table 2
+# vars2 <- c("PicVocab", "Flanker", "List", "CardSort", "Pattern",
+#             "Picture","Reading","RAVLT","WISC-V",
+#             "LMT","Externalizing","Internalizing","Stress")
+
+vars2 <- c(
+  "pea_ravlt_ld",
+  'pea_ravlt_ld_trial_vii_tc',
+  'pea_ravlt_sd_trial_vi_tc',
+  "nihtbx_list_uncorrected",
+  "nihtbx_reading_uncorrected",
+  "nihtbx_picvocab_uncorrected",
+  "nihtbx_cardsort_uncorrected",
+  "nihtbx_picture_uncorrected",
+  "pea_wiscv_tss",
+  "nihtbx_flanker_uncorrected",
+  "lmt_scr_perc_correct",
+  "nihtbx_pattern_uncorrected"
+)
+
+
+tab2 <- CreateTableOne(vars = vars2,
+                       data = nda18,
+                       strata = "compl")
+tabAsStringMatrix <-
+  print(tab2, printToggle = FALSE, noSpaces = TRUE)
+tab2 = knitr::kable(tabAsStringMatrix)
+kable(tabAsStringMatrix )
+```
+
+
+```{r}
+
+## Create SM Figures 1 & 2
+par(mfrow = c(3, 3))
+for (p in 1:12) {
+  hist(
+    scale(nda18[, ind_np[p]]),
+    xlab = "",
+    freq = FALSE,
+    main = names(nda18)[ind_np][p]
+  )
+}
+
+```
+```{r}
+
+par(mfrow = c(2, 2))
+for (p in 1:3) {
+  hist(
+    scale(nda18[, ind_dv[p]]),
+    xlab = "",
+    freq = FALSE,
+    main = names(nda18)[ind_dv][p]
+  )
+}
+
+```
+
+```{r}
+###################################
+###################################
+## Subset variables for analyses ##
+###################################
+###################################
+
+data = nda18[, c(
+  1,
+  ind_nest,
+  ind_demog,
+  which(names(nda18) == "rel_relationship"),
+  which(names(nda18) == "rel_group_id"),
+  ind_np,
+  ind_dv
+)]
+names(data)
+dim(data)
+data$subjectid = as.character(data$subjectid)
+names(data)[names(data) == "subjectid"] = "pid"
+data$site_num = as.numeric(substr(data$Site, 5, 6))
+data$fam_num = 0
+ind = 0
+for (i in sort(unique(data$rel_family_id))) {
+  ind = ind + 1
+  data$fam_num[data$rel_family_id == i &
+                 !is.na(data$rel_family_id)] = ind
+}
+data = data[order(data$site_num, data$fam_num, data$rel_group_id), ]
+
+```
+```{r}
+ind_Y = c(11:22)
+names(data)[ind_Y]
+```
+
+```{r}
+
+####################
+####################
+## Fit usual PCA  ## 
+####################
+####################
+
+## PCA on unimputed data 
+
+Y = as.matrix(scale(data[complete.cases(data[, c(ind_Y)]), ind_Y]))
+ev = eigen(cor(Y))
+ap = parallel(
+  subject = nrow(Y),
+  var = ncol(Y),
+  rep = 100,
+  cent = .05
+)
+nS = nScree(x = ev$values, aparallel = ap$eigen$qevpea)
+plotnScree(nS)
+ncomp = 3
+
+```
+
+```{r}
+y.pca = psych::principal(Y,
+                         rotate = "promax",
+                         nfactors = ncomp,
+                         scores = TRUE)
+y.pca$loadings
+
+```
+
+```{r}
+y.pca = psych::principal(Y,
+                         rotate = "varimax",
+                         nfactors = ncomp,
+                         scores = TRUE)
+y.pca$loadings
+```
+
