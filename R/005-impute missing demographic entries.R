@@ -1,5 +1,4 @@
 
-
 if (!('data.table' %in% installed.packages()[, "Package"]))
   install.packages('data.table')
 if (!('mice' %in% installed.packages()[, "Package"]))
@@ -8,11 +7,13 @@ library(data.table)
 library(mice)
 
 
-nda18 = readRDS("E:/ABCD study/R/Outputs/nda18_step3.Rds")
+nda18 = readRDS("E:/ABCD study/R/Outputs/nda18_b1.Rds")
 nda18$household.income.3level[nda18$household.income.3level == ""] = NA
 nda18$household.income.4level[nda18$household.income.4level == ""] = NA
 nda18$high.educ[nda18$high.educ == ""] = NA
-
+nda18$married[nda18$married ==""]=NA
+nda18$race.ethnicity.5level[nda18$race.ethnicity.5level==""]=NA
+nda18$race.eth.8level[nda18$race.eth.8level==""]=NA
 
 
 dat_nms = c(
@@ -37,7 +38,7 @@ for (m in dat_nms)
 
 
 # Number of multiple imputed datasets & maximum number of iterations
-n.imp = 6
+n.imp = 5
 n.iter = 5
 
 var.ls <-
@@ -104,23 +105,20 @@ dat.imp <- mice(
 rm(dat0)
 
 # get one imputed dataset out
-completedData <- complete(dat.imp, 1)
+completedData <- complete(dat.imp,1)
+names(completedData)
 
-
-completedData<- completedData[,-c(3,4)]
+completedData<- completedData[,-c(2,3,4)]
 # saveRDS(completedData, "completedData.Rds")
 # completedData<- readRDS("completedData_step4.Rds")
 
 # merge to the original data
-vars = colnames(completedData)[-c(1,2)]
-colnames(completedData)[-c(1,2)] = paste0(vars, ".imputed") #rename these variables to imputed variables
-saveRDS(completedData, "E:/ABCD study/R/Outputs/completedData_step4.Rds")
+vars = colnames(completedData)[-c(1)]
+colnames(completedData)[-c(1)] = paste0(vars, ".imputed") #rename these variables to imputed variables
 
+nda18_step5 = merge(nda18, completedData, by = c("src_subject_id"))
 
-# I was unable to merge the completedData to the full dataset (not enough RAM), will merge to the baseline data in 005
-# nda18_step4 = merge(nda18, completedData, by = c("src_subject_id"))
-
-summary(nda18[, vars])
+summary(nda18_step5[, names(completedData)])
 summary(completedData)
 
-saveRDS(nda18, "E:/ABCD study/R/Outputs/nda18_step4.Rds")
+saveRDS(nda18_step5, "E:/ABCD study/R/Outputs/nda18_step5.Rds")
